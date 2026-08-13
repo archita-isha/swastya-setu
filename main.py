@@ -1,0 +1,404 @@
+import pandas as pd
+import smtplib
+import imaplib
+import email
+from email.mime.text import MIMEText
+import time
+import re
+import os
+from datetime import datetime
+from dotenv import load_dotenv
+
+# =========================================================
+# 🔧 CONFIG
+# =========================================================
+load_dotenv()  # reads values from a local .env file (never committed to git)
+
+EXCEL_FILE = os.environ.get("EXCEL_FILE", "blood_donors_50.xlsx")
+
+COL_NAME = "Name"
+COL_BLOOD = "Blood Group"
+COL_DAYS = "Last Donation (Days)"
+COL_EMAIL = "Email"
+
+GMAIL = os.environ.get("GMAIL_USER")
+APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
+
+if not GMAIL or not APP_PASSWORD:
+    raise RuntimeError(
+        "Missing GMAIL_USER / GMAIL_APP_PASSWORD.\n"
+        "Create a .env file in the project root (copy .env.example) and fill in "
+        "a fresh Gmail App Password: https://myaccount.google.com/apppasswords"
+    )
+
+IMAP_SERVER = os.environ.get("IMAP_SERVER", "imap.gmail.com")
+SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
+
+HOSPITAL = os.environ.get("HOSPITAL_NAME", "City Blood Bank, Mysore")
+CONTACT = os.environ.get("CONTACT_NUMBER", "+91XXXXXXXXXX")
+
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "20"))        # ✅ (Q: Gmail limit → batching)
+SEND_DELAY = int(os.environ.get("SEND_DELAY", "5"))         # ✅ (Q: Gmail limit → delay)
+CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "30"))    # ✅ (Q: IMAP limit → safe polling)
+REQUIRED_DONORS = int(os.environ.get("REQUIRED_DONORS", "2"))
+
+RESP_FILE = "responses.csv"
+
+SENT_EMAILS = set()
+REQUEST_ID = str(int(time.time()))
+
+# =========================================================
+# 🧠 Q1: Extract Blood Group
+# =========================================================
+def extract_blood_group(text):
+    match = re.search(r"(A|B|AB|O)[+-]", text.upper())
+    return match.group() if match else None
+
+
+# =========================================================
+# 🧠 Q2: Filter Eligible Donors (>90 days)
+# =========================================================
+def get_eligible_donors(blood_group):
+    df = pd.read_excel(EXCEL_FILE)
+    df.columns = df.columns.str.strip()
+
+    df[COL_BLOOD] = df[COL_BLOOD].astype(str).str.upper().str.strip()
+
+    filtered = df[df[COL_BLOOD] == blood_group]
+    eligible = filtered[filtered[COL_DAYS] > 90]
+
+    return eligible.sort_values(by=COL_DAYS, ascending=False)
+
+
+# =========================================================
+# 🧠 Q3: Catchy Email + Address + Reimbursement
+# =========================================================
+def create_message(blood_group):
+    return f"""Hello,
+
+🩸 URGENT: {blood_group} blood required!
+
+🚗 Travel charges will be FULLY reimbursed by the patient.
+
+If you are willing to donate, please reply:
+
+YES + your CURRENT ADDRESS
+
+If unavailable, reply NO.
+
+Contact: {CONTACT}
+{HOSPITAL}
+"""
+
+
+# =========================================================
+# 🧠 Q4: Send Email (with safe headers)
+# =========================================================
+def send_email(to_email, subject, body):
+    try:
+        msg = MIMEText(body)
+        msg["Subject"] = subject
+        msg["From"] = GMAIL
+        msg["To"] = to_email
+        msg["Reply-To"] = GMAIL  # ✅ ensures replies come back correctly
+
+        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
+        server.login(GMAIL, APP_PASSWORD)
+        server.sendmail(GMAIL, to_email, msg.as_string())
+        server.quit()
+
+        print(f"📧 Sent → {to_email}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Failed → {to_email}: {e}")
+        return False
+
+
+# =========================================================
+# 🧠 Q5: Gmail Limit Handling (Batch + Delay)
+# =========================================================
+def send_bulk_emails(donors, subject, message):
+    for i in range(0, len(donors), BATCH_SIZE):
+        batch = donors[i:i+BATCH_SIZE]
+
+        for _, row in batch.iterrows():
+            email_id = row[COL_EMAIL].lower().strip()
+            send_email(email_id, subject, message)
+            SENT_EMAILS.add(email_id)
+            time.sleep(SEND_DELAY)  # ✅ avoid spam
+
+        print("⏸ Waiting before next batch...")
+        time.sleep(6)
+
+
+# =========================================================
+# ✅ GLOBAL: Track processed emails (avoid duplicates)
+# =========================================================
+PROCESSED_IDS = set()
+
+
+# =========================================================
+# 🧠 Q6: Read Emails (Robust Version)
+# =========================================================
+def read_emails():
+    print("🔍 Checking inbox...")
+
+    try:
+        mail = imaplib.IMAP4_SSL(IMAP_SERVER)
+        mail.login(GMAIL, APP_PASSWORD)
+        mail.select("inbox")
+
+        # ✅ Use ALL instead of UNSEEN (more reliable)
+        status, messages = mail.search(None, "ALL")
+
+        if status != "OK":
+            print("❌ Failed to fetch emails")
+            return []
+
+        email_ids = messages[0].split()
+        print(f"📨 Total emails in inbox: {len(email_ids)}")
+
+        responses = []
+
+        for eid in email_ids[-20:]:  # ✅ Only last 20 emails (efficient)
+            
+            if eid in PROCESSED_IDS:
+                continue
+
+            _, msg_data = mail.fetch(eid, "(RFC822)")
+            raw = msg_data[0][1]
+
+            msg = email.message_from_bytes(raw)
+            subject=msg.get("Subject","")
+            if  f"BLOOD-REQ-{REQUEST_ID}" not in subject:
+                continue
+            sender = msg.get("From", "")
+
+            print(f"📩 Processing: {sender}")
+
+            # ✅ Extract body safely
+            body = ""
+
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_type() == "text/plain":
+                        try:
+                            body = part.get_payload(decode=True).decode(errors="ignore")
+                            break
+                        except:
+                            continue
+            else:
+                try:
+                    body = msg.get_payload(decode=True).decode(errors="ignore")
+                except:
+                    body = ""
+
+            responses.append((sender, body))
+            PROCESSED_IDS.add(eid)
+
+        mail.logout()
+        return responses
+
+    except Exception as e:
+        print(f"❌ IMAP Error: {e}")
+        return []
+
+
+# =========================================================
+# 🧠 Q7: Handle Messy Replies (Smart Parsing)
+# =========================================================
+YES_WORDS = ["YES", "YEAH", "OK", "SURE", "READY", "I CAN"]
+NO_WORDS = ["NO", "NOT", "BUSY", "CANNOT"]
+
+def parse_response(body):
+    # Take only first line (ignore quoted replies)
+    text = body.strip().split("\n")[0].upper()
+
+    # Clean text (remove symbols, normalize spaces)
+    text = re.sub(r"[^A-Z\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # Check NO first (priority)
+    if re.search(r"\b(NO|NOT|BUSY|CANNOT|CAN'T)\b", text):
+        return "NO", None
+
+    # Then check YES
+    if re.search(r"\b(YES|YEAH|SURE|READY)\b", text):
+        # Remove YES words to extract address (if any)
+        address = re.sub(r"\b(YES|YEAH|SURE|READY)\b", "", text).strip()
+        return "YES", address if address else "NOT PROVIDED"
+
+    return "UNKNOWN", None
+
+
+# =========================================================
+# 🧠 Q8: Handle Duplicate Responses (FCFS Rule)
+# =========================================================
+def save_response(email_id, response, address):
+    new = pd.DataFrame([{
+        "Email": email_id,
+        "Response": response,
+        "Address": address,
+        "Time": datetime.now()
+    }])
+
+    if os.path.exists(RESP_FILE):
+        df = pd.read_csv(RESP_FILE)
+
+        # ✅ Only FIRST response kept (FCFS)
+        if email_id in df["Email"].values:
+            print(f"⚠️ Duplicate ignored: {email_id}")
+            return
+
+        df = pd.concat([df, new], ignore_index=True)
+    else:
+        df = new
+
+    df.to_csv(RESP_FILE, index=False)
+
+
+# =========================================================
+# 🧠 Q9: Process Incoming Emails (Improved)
+# =========================================================
+def extract_email(sender):
+    match = re.search(r"<(.+?)>", sender)
+    return match.group(1).lower().strip() if match else sender.lower().strip()
+
+def process_incoming():
+    emails = read_emails()
+
+    if not emails:
+        print("📭 No new responses")
+        return
+
+    
+    for sender, body in emails:
+        # Extract clean email ID
+        sender_email = extract_email(sender)
+
+        # Ignore system / spam emails
+        if any(x in sender_email for x in ["noreply", "no-reply", "mailer-daemon"]):
+            continue
+
+        # Ignore unknown senders (only allow contacted donors)
+        if sender_email not in SENT_EMAILS:
+            continue
+
+        # Parse response
+        response, address = parse_response(body)
+
+        print(f"📨 VALID → {response} | {sender_email}")
+
+        # Save only valid responses
+        if response != "UNKNOWN":
+            save_response(sender_email, response, address)
+
+# =========================================================
+# 🧠 Q10: FCFS Selection Logic
+# =========================================================
+def get_selected_donors():
+    df = pd.read_csv(RESP_FILE)
+
+    df["Time"] = pd.to_datetime(df["Time"])
+
+    # ✅ Only YES responses
+    df = df[df["Response"] == "YES"]
+
+    # ✅ IMPORTANT: Only valid donors
+    df = df[df["Email"].isin(SENT_EMAILS)]
+
+    df = df.drop_duplicates(subset="Email", keep="first")
+    df = df.sort_values(by="Time", ascending=True)
+
+    return df.head(REQUIRED_DONORS), df
+
+
+# =========================================================
+# 🧠 Q11: Send Selection + Rejection Messages
+# =========================================================
+def notify_all():
+    selected, all_yes = get_selected_donors()
+
+    selected_emails = set(selected["Email"])
+
+    for _, row in all_yes.iterrows():
+        email_id = row["Email"]
+
+        if email_id in selected_emails:
+            msg = f"""Hello,
+
+✅ You are selected to donate blood.
+
+📍 {HOSPITAL}
+
+Please come as soon as possible.
+🚗 Travel cost will be reimbursed.
+
+Contact: {CONTACT}
+"""
+            send_email(email_id, "Selected for Blood Donation", msg)
+
+        else:
+            msg = """Hello,
+
+🙏 Thank you for your willingness to donate.
+
+The blood requirement has been fulfilled.
+
+We truly appreciate your support ❤️
+"""
+            send_email(email_id, "Blood Requirement Fulfilled", msg)
+
+
+# =========================================================
+# 🚀 MAIN AGENT
+# =========================================================
+if os.path.exists(RESP_FILE):
+    os.remove(RESP_FILE)
+
+def run_agent():
+    print("🚀 BLOOD DONOR AGENT STARTED")
+
+    text = input("Enter request: ")
+    blood_group = extract_blood_group(text)
+
+    if not blood_group:
+        print("❌ Invalid blood group")
+        return
+
+    donors = get_eligible_donors(blood_group)
+
+    if donors.empty:
+        print("❌ No eligible donors found")
+        return
+
+    subject = f"[BLOOD-REQ-{REQUEST_ID}] {blood_group} Blood Needed"
+    message = create_message(blood_group)
+
+    send_bulk_emails(donors, subject, message)
+
+    print("📡 Listening for responses...\n")
+
+    # ✅ Debug-safe loop
+    while True:
+        print("⏳ Waiting for replies...")
+        
+        process_incoming()
+
+        if os.path.exists(RESP_FILE):
+            df = pd.read_csv(RESP_FILE)
+
+            yes_count = len(df[df["Response"] == "YES"])
+            print(f"✅ YES responses: {yes_count}")
+
+            if yes_count >= REQUIRED_DONORS:
+                print("🎯 Enough donors found!")
+                notify_all()
+                break
+
+        time.sleep(CHECK_INTERVAL)
+
+if __name__ == "__main__":
+    run_agent()
