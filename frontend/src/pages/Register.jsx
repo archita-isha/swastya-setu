@@ -340,7 +340,7 @@ export default function Register() {
               </div>
 
               <div className="input-group">
-                <label className="input-label">SMS Verification Code (printed on console)</label>
+                <label className="input-label">SMS Gateway Simulation Code (printed on console)</label>
                 <div style={styles.inputWithIcon}>
                   <KeyRound size={20} color="var(--text-muted)" style={styles.inputIcon} />
                   <input 
@@ -349,7 +349,7 @@ export default function Register() {
                     onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     className="input-field" 
                     style={{paddingLeft: '2.5rem', width: '100%'}}
-                    placeholder="Enter 6-digit SMS OTP"
+                    placeholder="Enter 6-digit Simulation OTP"
                     pattern="[0-9]{6}"
                     required
                   />

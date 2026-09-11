@@ -1,18 +1,20 @@
 import { useNavigate } from 'react-router-dom';
-import { Award, Heart, Droplet, Star, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { Award, Heart, Droplet, Star, ShieldCheck, ArrowLeft, LogOut } from 'lucide-react';
+import { useAppContext } from '../context/AppContext';
 
 export default function Profile() {
   const navigate = useNavigate();
+  const { user, logout } = useAppContext();
 
-  // Simulated Donor Data
+  // Load from logged-in user profile, fallback to mock data
   const donor = {
-    name: "John Doe",
-    usn: "1RN21CS045",
-    bloodGroup: "O+",
-    rank: "Gold Hero",
-    points: 1250,
-    donations: 4,
-    livesSaved: 12, // Usually estimated at 3 lives per pint
+    name: user?.name || "John Doe",
+    usn: user?.usn || "1RN21CS045",
+    bloodGroup: user?.bloodGroup || user?.blood_group || "O+",
+    rank: user ? (user.donor ? "Active Donor" : "Student") : "Gold Hero",
+    points: user ? (user.donor ? 1250 : 0) : 1250,
+    donations: user ? (user.donor ? 4 : 0) : 4,
+    livesSaved: user ? (user.donor ? 12 : 0) : 12,
   };
 
   return (
@@ -72,12 +74,35 @@ export default function Profile() {
           </div>
           <p style={styles.progressSub}>You are just 750 points away from unlocking the highest honor in SWASTYA SETU!</p>
         </div>
+
+        {/* Logout Button */}
+        <button style={styles.logoutBtn} onClick={logout}>
+          <LogOut size={20} />
+          Sign Out of Account
+        </button>
+
       </div>
     </div>
   );
 }
 
 const styles = {
+  logoutBtn: {
+    backgroundColor: 'var(--primary)',
+    color: '#fff',
+    padding: '1rem',
+    borderRadius: '12px',
+    fontSize: '1rem',
+    fontWeight: 600,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.5rem',
+    cursor: 'pointer',
+    border: 'none',
+    width: '100%',
+    transition: 'background 0.2s',
+  },
   container: {
     maxWidth: '800px',
     margin: '0 auto',

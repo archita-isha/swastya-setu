@@ -13,6 +13,12 @@ import MapNavigation from './pages/MapNavigation';
 
 import Navbar from './components/Navbar';
 import EmergencyPopup from './components/EmergencyPopup';
+import { useAppContext } from './context/AppContext';
+
+function ProtectedRoute({ children }) {
+  const { user } = useAppContext();
+  return user ? children : <Navigate to="/login" replace />;
+}
 
 function App() {
   return (
@@ -27,15 +33,16 @@ function App() {
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/request" element={<BloodRequest />} />
-            <Route path="/processing" element={<Processing />} />
-            <Route path="/tracking" element={<Tracking />} />
-            <Route path="/selection" element={<FinalSelection />} />
-            <Route path="/donor-interaction" element={<DonorInteraction />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/active-requests" element={<ActiveRequests />} />
-            <Route path="/map" element={<MapNavigation />} />
+            
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/request" element={<ProtectedRoute><BloodRequest /></ProtectedRoute>} />
+            <Route path="/processing" element={<ProtectedRoute><Processing /></ProtectedRoute>} />
+            <Route path="/tracking" element={<ProtectedRoute><Tracking /></ProtectedRoute>} />
+            <Route path="/selection" element={<ProtectedRoute><FinalSelection /></ProtectedRoute>} />
+            <Route path="/donor-interaction" element={<ProtectedRoute><DonorInteraction /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/active-requests" element={<ProtectedRoute><ActiveRequests /></ProtectedRoute>} />
+            <Route path="/map" element={<ProtectedRoute><MapNavigation /></ProtectedRoute>} />
           </Routes>
         </main>
         <EmergencyPopup />

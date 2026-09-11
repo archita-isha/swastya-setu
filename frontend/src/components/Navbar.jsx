@@ -1,9 +1,9 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { Moon, Sun, BellRing, User, Home } from 'lucide-react';
+import { Moon, Sun, BellRing, User, Home, LogOut } from 'lucide-react';
 
 export default function Navbar() {
-  const { theme, toggleTheme, triggerEmergency } = useAppContext();
+  const { theme, toggleTheme, triggerEmergency, logout } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -46,6 +46,10 @@ export default function Navbar() {
 
           <button onClick={toggleTheme} style={styles.iconButton} title="Toggle Theme">
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+          </button>
+
+          <button onClick={logout} style={styles.iconButton} title="Log Out">
+            <LogOut size={20} />
           </button>
         </div>
       </div>

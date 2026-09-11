@@ -44,10 +44,12 @@ def background_agent_loop(blood_group):
         agent_running = False
         return
 
-    # 2. Send initial bulk emails
+    # 2. Send initial bulk notifications
     subject = f"[BLOOD-REQ-{agent.REQUEST_ID}] {blood_group} Blood Needed"
     message = agent.create_message(blood_group)
     agent.send_bulk_emails(donors, subject, message)
+    agent.send_bulk_sms(donors, blood_group)
+    agent.send_bulk_whatsapp(donors, blood_group)
     
     print("[API] Listening for responses in background...")
     
@@ -68,6 +70,15 @@ def background_agent_loop(blood_group):
         
     agent_running = False
     print("[API] Background agent loop finished.")
+
+
+@app.route('/', methods=['GET', 'HEAD'])
+def health_check():
+    return jsonify({
+        "status": "online",
+        "service": "Swasthya Setu API",
+        "message": "Backend server is running healthy"
+    }), 200
 
 
 @app.route('/api/request', methods=['POST'])
@@ -140,24 +151,32 @@ def get_selected():
         
         results = []
         for _, row in selected.iterrows():
-            email_id = row["Email"].lower().strip()
-            match = df_db[df_db["Email"] == email_id]
-            if not match.empty:
-                name = match.iloc[0]["Name"]
-                blood_group = match.iloc[0]["Blood Group"]
-                phone = match.iloc[0]["Phone"]
-            else:
-                name = "Unknown Donor"
-                blood_group = "Unknown"
-                phone = "N/A"
-                
+            email_id = str(row.get("Email", "")).lower().strip()
+            
+            # Use name and details saved directly with response if available
+            name = row.get("Name") if (pd.notna(row.get("Name")) and str(row.get("Name")).strip() != "") else None
+            blood_group = row.get("Blood Group") if (pd.notna(row.get("Blood Group")) and str(row.get("Blood Group")).strip() != "") else None
+            phone = row.get("Phone") if (pd.notna(row.get("Phone")) and str(row.get("Phone")).strip() != "") else None
+            
+            # Fallback to get_donor_info lookup
+            if not name or name == "Unknown Donor":
+                info = agent.get_donor_info(email_id)
+                if info:
+                    name = info.get("name")
+                    blood_group = info.get("bloodGroup")
+                    phone = info.get("phone")
+                else:
+                    name = "Unknown Donor"
+                    blood_group = "Unknown"
+                    phone = "N/A"
+                    
             results.append({
                 "name": name,
                 "bloodGroup": blood_group,
                 "email": email_id,
                 "contact": str(phone),
-                "address": row["Address"] if (pd.notna(row["Address"]) and str(row["Address"]).strip() != "" and str(row["Address"]).strip().upper() != "NOT PROVIDED") else "RNSIT Campus, Bengaluru",
-                "time": str(row["Time"])
+                "address": row["Address"] if (pd.notna(row.get("Address")) and str(row.get("Address")).strip() != "" and str(row.get("Address")).strip().upper() != "NOT PROVIDED") else "RNSIT Campus, Bengaluru",
+                "time": str(row.get("Time", ""))
             })
             
         return jsonify(results), 200
@@ -212,8 +231,10 @@ def send_otp():
         }
     }
 
-    # Print Phone OTP to Flask server stdout for demo
-    print(f"\n[SMS GATEWAY SIMULATION] To: {phone} | Code: {phone_otp} | Message: Your Swastya Setu verification code is {phone_otp}. Valid for 10 minutes.\n")
+    # Send SMS & WhatsApp (using API if configured, otherwise falls back to console simulation)
+    sms_message = f"swasthya setu verification; {phone_otp} . Valid for 10 mins"
+    agent.send_sms(phone, sms_message)
+    agent.send_whatsapp(phone, sms_message)
 
     # Send Email OTP using agent.send_email
     subject = "[Swastya Setu] Email Verification OTP"
@@ -334,7 +355,59 @@ def login():
     return jsonify({"message": "Login successful", "user": result['user']}), 200
 
 
+@app.route('/api/whatsapp/webhook', methods=['GET', 'POST'])
+def whatsapp_webhook():
+    # 1. Meta Webhook Verification (GET)
+    if request.method == 'GET':
+        mode = request.args.get('hub.mode')
+        token = request.args.get('hub.verify_token')
+        challenge = request.args.get('hub.challenge')
+        verify_token = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'swastya_setu_verify')
+        if mode == 'subscribe' and token == verify_token:
+            return challenge, 200
+        return "Verification token mismatch", 403
+
+    # 2. Process incoming webhook (POST)
+    sender = None
+    body = None
+
+    # Check Twilio format (Form URL-encoded: 'From', 'Body')
+    if request.form:
+        sender = request.form.get('From', '')
+        body = request.form.get('Body', '')
+
+    # Check JSON format (Meta Cloud API / Green-API / Generic Webhook)
+    if not sender and (request.is_json or request.data):
+        data = request.get_json(silent=True) or {}
+
+        # Meta Cloud API structure
+        try:
+            entry = data.get('entry', [])[0]
+            change = entry.get('changes', [])[0]
+            value = change.get('value', {})
+            msg = value.get('messages', [])[0]
+            sender = msg.get('from', '')
+            if msg.get('type') == 'text':
+                body = msg.get('text', {}).get('body', '')
+        except (IndexError, KeyError, TypeError):
+            pass
+
+        # Generic / Direct JSON format
+        if not sender:
+            sender = data.get('from') or data.get('sender') or data.get('phone') or ''
+            body = data.get('body') or data.get('message') or data.get('text') or ''
+
+    if sender and body:
+        result = agent.process_whatsapp_incoming(sender, body)
+        # Twilio compatibility: return empty TwiML
+        if 'twilio' in request.headers.get('User-Agent', '').lower() or request.form.get('AccountSid'):
+            return '<Response></Response>', 200, {'Content-Type': 'text/xml'}
+        return jsonify({"status": "received", "result": result}), 200
+
+    return jsonify({"status": "ignored", "reason": "no_valid_message_found"}), 200
+
+
 if __name__ == '__main__':
     PORT = int(os.environ.get("PORT", 5000))
     print(f"[SERVER] SWASTYA SETU API SERVER STARTED ON PORT {PORT}")
-    app.run(port=PORT, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)

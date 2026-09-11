@@ -9,7 +9,7 @@ export default function Tracking() {
     contacted: 0,
     accepted: 0,
     declined: 0,
-    target: 50
+    target: 2
   });
 
   useEffect(() => {
@@ -20,13 +20,13 @@ export default function Tracking() {
         const data = await response.json();
         
         setStats({
-          contacted: data.contacted,
-          accepted: data.accepted,
-          declined: data.declined,
+          contacted: data.contacted || 0,
+          accepted: data.accepted || 0,
+          declined: data.declined || 0,
           target: data.target || 2
         });
 
-        if (data.accepted >= data.target) {
+        if (data.accepted >= (data.target || 2)) {
           clearInterval(interval);
           setTimeout(() => navigate('/selection'), 2000);
         }
@@ -38,7 +38,7 @@ export default function Tracking() {
     return () => clearInterval(interval);
   }, [navigate]);
 
-  const progressPercentage = (stats.contacted / stats.target) * 100;
+  const progressPercentage = Math.min(100, Math.round(((stats.accepted || 0) / (stats.target || 2)) * 100));
 
   return (
     <div className="container" style={styles.container}>
@@ -53,7 +53,7 @@ export default function Tracking() {
           <Users size={32} color="var(--secondary)" />
           <div style={styles.statInfo}>
             <span style={styles.statLabel}>Total Contacted</span>
-            <span style={styles.statValue}>{stats.contacted} / {stats.target}</span>
+            <span style={styles.statValue}>{stats.contacted} Donors</span>
           </div>
         </div>
 
@@ -61,7 +61,9 @@ export default function Tracking() {
           <CheckCircle size={32} color="var(--success)" />
           <div style={styles.statInfo}>
             <span style={styles.statLabel}>YES (Willing)</span>
-            <span style={{...styles.statValue, color: 'var(--success)'}}>{stats.accepted}</span>
+            <span style={{...styles.statValue, color: 'var(--success)'}}>
+              {stats.accepted} <span style={{fontSize: '1rem', color: 'var(--text-muted)'}}>/ {stats.target} needed</span>
+            </span>
           </div>
         </div>
 
@@ -76,8 +78,8 @@ export default function Tracking() {
 
       <div className="glass-panel" style={styles.progressSection}>
         <div style={styles.progressHeader}>
-          <span style={styles.progressLabel}>System Progress</span>
-          <span style={styles.progressPercentage}>{Math.round(progressPercentage)}%</span>
+          <span style={styles.progressLabel}>Requirement Fulfillment Progress</span>
+          <span style={styles.progressPercentage}>{progressPercentage}%</span>
         </div>
         <div style={styles.progressBarBg}>
           <div 

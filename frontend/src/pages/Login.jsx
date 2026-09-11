@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Droplet, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { loginUser } from '../utils/auth';
+import { useAppContext } from '../context/AppContext';
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { login } = useAppContext();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -22,6 +24,7 @@ export default function Login() {
       return;
     }
 
+    login(result.user);
     navigate('/dashboard');
   };
 

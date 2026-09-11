@@ -6,6 +6,7 @@ from email.mime.text import MIMEText
 import time
 import re
 import os
+import requests
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -117,6 +118,167 @@ def send_email(to_email, subject, body):
 
 
 # =========================================================
+# 🧠 Send SMS (via Textbee REST API or Local Console)
+# =========================================================
+def send_sms(to_phone, message):
+    textbee_api_key = os.environ.get("TEXTBEE_API_KEY", "")
+    if not textbee_api_key:
+        # Fallback to simulated console log
+        cleaned_phone = to_phone.strip()
+        if not cleaned_phone.startswith("+"):
+            if len(cleaned_phone) == 10:
+                cleaned_phone = "+91" + cleaned_phone
+            else:
+                cleaned_phone = "+" + cleaned_phone
+        print(f"\n[SMS GATEWAY SIMULATION] Message sent successfully to {cleaned_phone} | Message: {message}\n")
+        return True
+        
+    try:
+        url = "https://api.textbee.dev/api/v1/gateway/send-sms"
+        headers = {
+            "x-api-key": textbee_api_key,
+            "Content-Type": "application/json"
+        }
+        
+        # Ensure phone includes country code (e.g. +91)
+        cleaned_phone = to_phone.strip()
+        if not cleaned_phone.startswith("+"):
+            if len(cleaned_phone) == 10:
+                cleaned_phone = "+91" + cleaned_phone
+            else:
+                cleaned_phone = "+" + cleaned_phone
+                
+        payload = {
+            "recipients": [cleaned_phone],
+            "message": message
+        }
+        
+        device_id = os.environ.get("TEXTBEE_DEVICE_ID", "")
+        if device_id:
+            payload["deviceId"] = device_id
+
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code in [200, 201]:
+            print(f"📱 [SMS GATEWAY] Message sent successfully to {cleaned_phone}")
+            return True
+        else:
+            print(f"❌ Failed to send SMS via Textbee: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error sending SMS via Textbee: {e}")
+        return False
+
+
+# =========================================================
+# 🧠 Send WhatsApp (Twilio / Meta Cloud API / Generic Gateway / Simulation)
+# =========================================================
+def send_whatsapp(to_phone, message):
+    cleaned_phone = str(to_phone).strip()
+    digits = "".join(filter(str.isdigit, cleaned_phone))
+    if len(digits) == 10:
+        intl_phone = "+91" + digits
+    elif cleaned_phone.startswith("+"):
+        intl_phone = cleaned_phone
+    else:
+        intl_phone = "+" + digits
+
+    # 1. Twilio WhatsApp API
+    twilio_sid = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
+    twilio_auth = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
+    twilio_from = os.environ.get("TWILIO_WHATSAPP_NUMBER", "").strip()
+
+    if twilio_sid and twilio_auth:
+        if not twilio_from:
+            twilio_from = "whatsapp:+14155238886"  # Twilio Sandbox default
+        elif not twilio_from.startswith("whatsapp:"):
+            twilio_from = f"whatsapp:{twilio_from}"
+
+        whatsapp_to = f"whatsapp:{intl_phone}"
+        url = f"https://api.twilio.com/2010-04-01/Accounts/{twilio_sid}/Messages.json"
+
+        try:
+            res = requests.post(
+                url,
+                data={
+                    "From": twilio_from,
+                    "To": whatsapp_to,
+                    "Body": message
+                },
+                auth=(twilio_sid, twilio_auth)
+            )
+            if res.status_code in [200, 201]:
+                print(f"💬 [WHATSAPP TWILIO] Message sent successfully to {whatsapp_to}")
+                return True
+            else:
+                print(f"❌ Failed to send WhatsApp via Twilio: {res.status_code} - {res.text}")
+                return False
+        except Exception as e:
+            print(f"❌ Error sending WhatsApp via Twilio: {e}")
+            return False
+
+    # 2. Meta WhatsApp Cloud API
+    meta_token = os.environ.get("WHATSAPP_CLOUD_TOKEN", "").strip()
+    meta_phone_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+
+    if meta_token and meta_phone_id:
+        url = f"https://graph.facebook.com/v18.0/{meta_phone_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {meta_token}",
+            "Content-Type": "application/json"
+        }
+        recipient_digits = digits if len(digits) > 10 else f"91{digits}"
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": recipient_digits,
+            "type": "text",
+            "text": {"body": message}
+        }
+        try:
+            res = requests.post(url, json=payload, headers=headers)
+            if res.status_code in [200, 201]:
+                print(f"💬 [WHATSAPP META] Message sent successfully to {recipient_digits}")
+                return True
+            else:
+                print(f"❌ Failed to send WhatsApp via Meta: {res.status_code} - {res.text}")
+                return False
+        except Exception as e:
+            print(f"❌ Error sending WhatsApp via Meta: {e}")
+            return False
+
+    # 3. Generic / Custom WhatsApp Gateway (UltraMsg, Green-API, CallMeBot, etc.)
+    generic_url = os.environ.get("WHATSAPP_API_URL", "").strip()
+    generic_key = os.environ.get("WHATSAPP_API_KEY", "").strip()
+
+    if generic_url:
+        headers = {"Content-Type": "application/json"}
+        if generic_key:
+            headers["Authorization"] = f"Bearer {generic_key}"
+            headers["x-api-key"] = generic_key
+        payload = {
+            "to": intl_phone,
+            "phone": intl_phone,
+            "message": message,
+            "body": message
+        }
+        try:
+            res = requests.post(generic_url, json=payload, headers=headers)
+            if res.status_code in [200, 201]:
+                print(f"💬 [WHATSAPP GATEWAY] Message sent successfully to {intl_phone}")
+                return True
+            else:
+                print(f"❌ Failed to send WhatsApp via Gateway: {res.status_code} - {res.text}")
+                return False
+        except Exception as e:
+            print(f"❌ Error sending WhatsApp via Gateway: {e}")
+            return False
+
+    # 4. Fallback: Console Simulation
+    print(f"\n[WHATSAPP GATEWAY SIMULATION] Message sent successfully to whatsapp:{intl_phone} | Message: {message}\n")
+    return True
+
+
+# =========================================================
 # 🧠 Q5: Gmail Limit Handling (Batch + Delay)
 # =========================================================
 def send_bulk_emails(donors, subject, message):
@@ -134,9 +296,34 @@ def send_bulk_emails(donors, subject, message):
 
 
 # =========================================================
+# 🧠 Send Bulk SMS to Eligible Donors
+# =========================================================
+def send_bulk_sms(donors, blood_group):
+    print(f"📱 Sending bulk SMS requests for {blood_group}...")
+    for _, row in donors.iterrows():
+        phone = str(row.get("Phone", "")).strip()
+        if phone:
+            message = f"swasthya setu: urgent {blood_group} blood needed at {HOSPITAL}. Reply YES or NO."
+            send_sms(phone, message)
+
+
+# =========================================================
+# 🧠 Send Bulk WhatsApp to Eligible Donors
+# =========================================================
+def send_bulk_whatsapp(donors, blood_group):
+    print(f"💬 Sending bulk WhatsApp requests for {blood_group}...")
+    for _, row in donors.iterrows():
+        phone = str(row.get("Phone", "")).strip()
+        if phone:
+            message = f"swasthya setu: urgent {blood_group} blood needed at {HOSPITAL}. Reply YES or NO."
+            send_whatsapp(phone, message)
+
+
+# =========================================================
 # ✅ GLOBAL: Track processed emails (avoid duplicates)
 # =========================================================
 PROCESSED_IDS = set()
+PROCESSED_SMS_IDS = set()
 
 
 # =========================================================
@@ -213,31 +400,114 @@ YES_WORDS = ["YES", "YEAH", "OK", "SURE", "READY", "I CAN"]
 NO_WORDS = ["NO", "NOT", "BUSY", "CANNOT"]
 
 def parse_response(body):
-    # Take only first line (ignore quoted replies)
-    text = body.strip().split("\n")[0].upper()
+    if not body or not str(body).strip():
+        return "UNKNOWN", None
 
-    # Clean text (remove symbols, normalize spaces)
-    text = re.sub(r"[^A-Z\s]", " ", text)
+    # Take first line or text before common quote markers (">", "On ... wrote:", "---")
+    lines = str(body).strip().splitlines()
+    first_meaningful_line = ""
+    for line in lines:
+        l = line.strip()
+        if l and not l.startswith(">") and not l.startswith("On ") and not l.startswith("---") and not l.startswith("From:"):
+            first_meaningful_line = l
+            break
+            
+    if not first_meaningful_line:
+        first_meaningful_line = lines[0].strip()
+
+    text = first_meaningful_line.upper()
+
+    # Remove the system prompt phrases if they were echoed back in quoted replies
+    text = re.sub(r"REPLY\s+(YES|NO)\s+OR\s+(YES|NO)", " ", text)
+    text = re.sub(r"YES\s+OR\s+NO", " ", text)
+    text = re.sub(r"URGENT\s+[A-Z0-9\+\-]+\s+BLOOD", " ", text)
+
+    # Clean text
+    text = re.sub(r"[^A-Z0-9\s]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
 
-    # Check NO first (priority)
-    if re.search(r"\b(NO|NOT|BUSY|CANNOT|CAN'T)\b", text):
-        return "NO", None
-
-    # Then check YES
-    if re.search(r"\b(YES|YEAH|SURE|READY)\b", text):
-        # Remove YES words to extract address (if any)
-        address = re.sub(r"\b(YES|YEAH|SURE|READY)\b", "", text).strip()
+    # 1. Check YES first (positive willingness)
+    if re.search(r"\b(YES|YEAH|SURE|READY|YESS|I CAN|WILLING)\b", text):
+        # Extract address if provided after YES
+        address = re.sub(r"\b(YES|YEAH|SURE|READY|YESS|I CAN|WILLING)\b", "", text).strip()
         return "YES", address if address else "NOT PROVIDED"
+
+    # 2. Check NO (declining)
+    if re.search(r"\b(NO|NOT|BUSY|CANNOT|CAN T|CANT|UNAVAILABLE)\b", text):
+        return "NO", None
 
     return "UNKNOWN", None
 
 
 # =========================================================
-# 🧠 Q8: Handle Duplicate Responses (FCFS Rule)
+# 🧠 Q8: Handle Duplicate Responses & Store Donor Details (FCFS Rule)
 # =========================================================
-def save_response(email_id, response, address):
+def get_donor_info(sender_id):
+    """
+    Looks up a donor by either email or phone number in Excel registry.
+    Returns a dict: {"name": ..., "email": ..., "phone": ..., "bloodGroup": ...} or None.
+    If multiple rows match, prioritizes rows that are currently in SENT_EMAILS.
+    """
+    if not sender_id:
+        return None
+        
+    sender_clean = str(sender_id).lower().strip()
+    digits = "".join(filter(str.isdigit, sender_clean))[-10:]
+    
+    try:
+        df_donors = pd.read_excel(EXCEL_FILE)
+        df_donors.columns = df_donors.columns.str.strip()
+        
+        matches = []
+        for _, row in df_donors.iterrows():
+            donor_email = str(row.get("Email", "")).lower().strip()
+            donor_phone = "".join(filter(str.isdigit, str(row.get("Phone", ""))))[-10:]
+            donor_name = str(row.get("Name", "Unknown Donor")).strip()
+            donor_blood = str(row.get("Blood Group", "Unknown")).strip()
+            
+            # Match by email or 10-digit phone
+            if (sender_clean == donor_email) or (digits and donor_phone == digits):
+                info = {
+                    "name": donor_name,
+                    "email": donor_email,
+                    "phone": str(row.get("Phone", "")).strip(),
+                    "bloodGroup": donor_blood
+                }
+                matches.append(info)
+                
+        if not matches:
+            return None
+            
+        # Priority: match in SENT_EMAILS (the currently contacted donors)
+        for m in matches:
+            if m["email"] in SENT_EMAILS:
+                return m
+                
+        return matches[0]
+        
+    except Exception as e:
+        print(f"❌ Error looking up donor for '{sender_id}': {e}")
+        return None
+
+
+def get_donor_by_phone(phone_str):
+    info = get_donor_info(phone_str)
+    return info["email"] if info else None
+
+
+def save_response(email_id, response, address, donor_name=None, donor_phone=None, donor_blood=None):
+    # Lookup donor details if not directly passed
+    if not donor_name or not donor_phone:
+        info = get_donor_info(email_id)
+        if info:
+            donor_name = donor_name or info.get("name")
+            donor_phone = donor_phone or info.get("phone")
+            donor_blood = donor_blood or info.get("bloodGroup")
+
     new = pd.DataFrame([{
+        "Name": donor_name or "Unknown Donor",
+        "Blood Group": donor_blood or "Unknown",
+        "Phone": donor_phone or "N/A",
         "Email": email_id,
         "Response": response,
         "Address": address,
@@ -266,34 +536,146 @@ def extract_email(sender):
     match = re.search(r"<(.+?)>", sender)
     return match.group(1).lower().strip() if match else sender.lower().strip()
 
-def process_incoming():
-    emails = read_emails()
 
-    if not emails:
-        print("📭 No new responses")
+def process_incoming_sms():
+    textbee_api_key = os.environ.get("TEXTBEE_API_KEY", "")
+    device_id = os.environ.get("TEXTBEE_DEVICE_ID", "")
+    if not textbee_api_key:
         return
-
+        
+    # Poll received messages from device history
+    url = "https://api.textbee.dev/api/v1/gateway/messages?direction=received"
+    if device_id:
+        url = f"https://api.textbee.dev/api/v1/gateway/devices/{device_id}/messages?direction=received"
+        
+    headers = {"x-api-key": textbee_api_key}
     
-    for sender, body in emails:
-        # Extract clean email ID
-        sender_email = extract_email(sender)
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            raw_json = response.json()
+            messages = []
+            if isinstance(raw_json, list):
+                messages = raw_json
+            elif isinstance(raw_json, dict):
+                messages = raw_json.get("data", [])
+                
+            for m in messages:
+                msg_id = m.get("_id")
+                if not msg_id or msg_id in PROCESSED_SMS_IDS:
+                    continue
+                    
+                sender = m.get("sender", "")
+                body = m.get("message", "")
+                
+                # Check if sender is a valid donor in Excel
+                donor_info = get_donor_info(sender)
+                if not donor_info:
+                    PROCESSED_SMS_IDS.add(msg_id)
+                    continue
+                    
+                donor_email = donor_info["email"]
+                # Ignore messages from numbers that were not contacted in the active request
+                if donor_email not in SENT_EMAILS:
+                    PROCESSED_SMS_IDS.add(msg_id)
+                    continue
+                    
+                response_val, address = parse_response(body)
+                print(f"📨 VALID SMS REPLY → {response_val} | {sender} ({donor_info['name']})")
+                
+                if response_val != "UNKNOWN":
+                    save_response(
+                        donor_email,
+                        response_val,
+                        address,
+                        donor_name=donor_info["name"],
+                        donor_phone=donor_info["phone"],
+                        donor_blood=donor_info["bloodGroup"]
+                    )
+                    
+                PROCESSED_SMS_IDS.add(msg_id)
+                
+    except Exception as e:
+        print(f"❌ Error checking incoming SMS: {e}")
 
-        # Ignore system / spam emails
-        if any(x in sender_email for x in ["noreply", "no-reply", "mailer-daemon"]):
-            continue
 
-        # Ignore unknown senders (only allow contacted donors)
-        if sender_email not in SENT_EMAILS:
-            continue
+def process_incoming():
+    # 1. Process email replies
+    try:
+        emails = read_emails()
+        if emails:
+            for sender, body in emails:
+                sender_email = extract_email(sender)
+                if any(x in sender_email for x in ["noreply", "no-reply", "mailer-daemon"]):
+                    continue
+                if sender_email not in SENT_EMAILS:
+                    continue
+                response, address = parse_response(body)
+                donor_info = get_donor_info(sender_email)
+                donor_name = donor_info["name"] if donor_info else None
+                donor_phone = donor_info["phone"] if donor_info else None
+                donor_blood = donor_info["bloodGroup"] if donor_info else None
 
-        # Parse response
-        response, address = parse_response(body)
+                print(f"📨 VALID EMAIL REPLY → {response} | {sender_email} ({donor_name or 'Donor'})")
+                if response != "UNKNOWN":
+                    save_response(
+                        sender_email,
+                        response,
+                        address,
+                        donor_name=donor_name,
+                        donor_phone=donor_phone,
+                        donor_blood=donor_blood
+                    )
+        else:
+            print("📭 No new email responses")
+    except Exception as e:
+        print(f"❌ Error processing incoming emails: {e}")
 
-        print(f"📨 VALID → {response} | {sender_email}")
+    # 2. Process SMS replies
+    try:
+        process_incoming_sms()
+    except Exception as e:
+        print(f"❌ Error processing incoming SMS: {e}")
 
-        # Save only valid responses
-        if response != "UNKNOWN":
-            save_response(sender_email, response, address)
+
+# =========================================================
+# 🧠 Process Incoming WhatsApp Message (Webhook Handler)
+# =========================================================
+def process_whatsapp_incoming(sender_phone, body):
+    """
+    Handles incoming WhatsApp messages from Twilio / Meta Webhooks.
+    Maps sender phone to donor email, parses YES/NO response, and saves deduplicated response.
+    """
+    if not sender_phone or not body:
+        return {"status": "ignored", "reason": "empty_payload"}
+
+    # Extract clean donor info
+    donor_info = get_donor_info(sender_phone)
+    if not donor_info:
+        print(f"⚠️ WhatsApp reply from unregistered donor phone: {sender_phone}")
+        return {"status": "ignored", "reason": "unregistered_donor"}
+
+    donor_email = donor_info["email"]
+    if donor_email not in SENT_EMAILS:
+        print(f"⚠️ WhatsApp reply from donor not in active request: {donor_email}")
+        return {"status": "ignored", "reason": "not_in_active_request"}
+
+    response_val, address = parse_response(body)
+    print(f"📨 VALID WHATSAPP REPLY → {response_val} | {sender_phone} ({donor_info['name']})")
+
+    if response_val != "UNKNOWN":
+        save_response(
+            donor_email,
+            response_val,
+            address,
+            donor_name=donor_info["name"],
+            donor_phone=donor_info["phone"],
+            donor_blood=donor_info["bloodGroup"]
+        )
+        return {"status": "success", "donor": donor_info["name"], "email": donor_email, "response": response_val, "address": address}
+
+    return {"status": "ignored", "reason": "unknown_response_text"}
+
 
 # =========================================================
 # 🧠 Q10: FCFS Selection Logic
