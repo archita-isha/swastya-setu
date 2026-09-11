@@ -192,13 +192,14 @@ def send_whatsapp(to_phone, message):
     # 1. Twilio WhatsApp API
     twilio_sid = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
     twilio_auth = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
-    twilio_from = os.environ.get("TWILIO_WHATSAPP_NUMBER", "").strip()
+    twilio_from_raw = os.environ.get("TWILIO_WHATSAPP_NUMBER", "").strip()
 
     if twilio_sid and twilio_auth:
-        if not twilio_from:
+        from_digits = "".join(filter(str.isdigit, twilio_from_raw))
+        if not from_digits:
             twilio_from = "whatsapp:+14155238886"  # Twilio Sandbox default
-        elif not twilio_from.startswith("whatsapp:"):
-            twilio_from = f"whatsapp:{twilio_from}"
+        else:
+            twilio_from = f"whatsapp:+{from_digits}"
 
         whatsapp_to = f"whatsapp:{intl_phone}"
         url = f"https://api.twilio.com/2010-04-01/Accounts/{twilio_sid}/Messages.json"
@@ -214,13 +215,13 @@ def send_whatsapp(to_phone, message):
                 auth=(twilio_sid, twilio_auth)
             )
             if res.status_code in [200, 201]:
-                print(f"💬 [WHATSAPP TWILIO] Message sent successfully to {whatsapp_to}")
+                print(f"[WHATSAPP TWILIO] Message sent successfully to {whatsapp_to}")
                 return True
             else:
-                print(f"❌ Failed to send WhatsApp via Twilio: {res.status_code} - {res.text}")
+                print(f"[ERROR] Failed to send WhatsApp via Twilio: {res.status_code} - {res.text}")
                 return False
         except Exception as e:
-            print(f"❌ Error sending WhatsApp via Twilio: {e}")
+            print(f"[ERROR] Exception sending WhatsApp via Twilio: {e}")
             return False
 
     # 2. Meta WhatsApp Cloud API
@@ -243,13 +244,13 @@ def send_whatsapp(to_phone, message):
         try:
             res = requests.post(url, json=payload, headers=headers)
             if res.status_code in [200, 201]:
-                print(f"💬 [WHATSAPP META] Message sent successfully to {recipient_digits}")
+                print(f"[WHATSAPP META] Message sent successfully to {recipient_digits}")
                 return True
             else:
-                print(f"❌ Failed to send WhatsApp via Meta: {res.status_code} - {res.text}")
+                print(f"[ERROR] Failed to send WhatsApp via Meta: {res.status_code} - {res.text}")
                 return False
         except Exception as e:
-            print(f"❌ Error sending WhatsApp via Meta: {e}")
+            print(f"[ERROR] Exception sending WhatsApp via Meta: {e}")
             return False
 
     # 3. Generic / Custom WhatsApp Gateway (UltraMsg, Green-API, CallMeBot, etc.)
@@ -270,13 +271,13 @@ def send_whatsapp(to_phone, message):
         try:
             res = requests.post(generic_url, json=payload, headers=headers)
             if res.status_code in [200, 201]:
-                print(f"💬 [WHATSAPP GATEWAY] Message sent successfully to {intl_phone}")
+                print(f"[WHATSAPP GATEWAY] Message sent successfully to {intl_phone}")
                 return True
             else:
-                print(f"❌ Failed to send WhatsApp via Gateway: {res.status_code} - {res.text}")
+                print(f"[ERROR] Failed to send WhatsApp via Gateway: {res.status_code} - {res.text}")
                 return False
         except Exception as e:
-            print(f"❌ Error sending WhatsApp via Gateway: {e}")
+            print(f"[ERROR] Exception sending WhatsApp via Gateway: {e}")
             return False
 
     # 4. Fallback: Console Simulation
