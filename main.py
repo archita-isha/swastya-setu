@@ -109,11 +109,17 @@ def send_email(to_email, subject, body):
         server.sendmail(GMAIL, to_email, msg.as_string())
         server.quit()
 
-        print(f"📧 Sent → {to_email}")
+        try:
+            print(f"📧 Sent → {to_email}")
+        except Exception:
+            print(f"[MAIL] Sent -> {to_email}")
         return True
 
     except Exception as e:
-        print(f"❌ Failed → {to_email}: {e}")
+        try:
+            print(f"❌ Failed → {to_email}: {e}")
+        except Exception:
+            print(f"[MAIL] Failed -> {to_email}: {e}")
         return False
 
 
