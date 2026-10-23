@@ -1,6 +1,5 @@
 # Secrets — NEVER commit
 .env
-users.json
 
 # Python
 __pycache__/

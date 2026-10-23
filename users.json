@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Demo",
+    "usn": "1RN23CI100",
+    "email": "architaisha23aiml@rnsit.ac.in",
+    "password_hash": "scrypt:32768:8:1$VUtyPMn3N2HxtyS7$2fad6cba0fe9dbe27eea5d84d53fd5e26c80728b09183de3f53db573b786af8919b46758e85ff6dda014dfff2f8b11417b1862f7a6e9a0a17d9674e6961d93bf",
+    "blood_group": "A+",
+    "donor": true
+  },
+  {
+    "name": "Ananya Singh",
+    "usn": "1RN23CI101",
+    "email": "ananyasingh23aiml@rnsit.ac.in",
+    "password_hash": "scrypt:32768:8:1$31XJj3UNHQqv1gok$00626e31f0c3baa99e1d5eae6e74100a46b86041a66b1bd3cd4a0f8ff9ffac95cf90113695291a24782a087fff32fcc1559ed1b80d964c9e4fe1d6efbdf5f58d",
+    "blood_group": "A+",
+    "donor": true
+  },
+  {
+    "name": "Vishwajeet Kumar",
+    "usn": "1RN23CI184",
+    "email": "vishwajeetkumar23aiml@rnsit.ac.in",
+    "password_hash": "scrypt:32768:8:1$sUbsbOYZYQSX0TJD$84bbb924638fff5f33dad7e6c3245b8f8572584a92e7d3db7d5f4e8389463f77278b720d5208cda0be54ae01495f3ed66a960b368abb754e49b4c00bb625277f",
+    "blood_group": "B+",
+    "donor": false
+  }
+]
