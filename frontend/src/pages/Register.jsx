@@ -81,16 +81,22 @@ export default function Register() {
         body: JSON.stringify(formData)
       });
 
-      const data = await response.json();
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (jsonErr) {
+        data = {};
+      }
+
       if (response.ok) {
-        setMessage('Verification codes sent to your email and phone.');
+        setMessage('Verification code sent! Please check your email inbox.');
         setStep('verification');
       } else {
         setError(data.error || 'Failed to send OTP. Please try again.');
       }
     } catch (err) {
       console.error(err);
-      setError('Connection to backend failed.');
+      setError('Connection to backend timed out or failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -105,6 +111,12 @@ export default function Register() {
       setError('OTP has expired. Please request a new one.');
       return;
     }
+
+    const code = emailOtp.trim() || phoneOtp.trim();
+    if (!code || code.length < 6) {
+      setError('Please enter the 6-digit verification code.');
+      return;
+    }
     
     setLoading(true);
 
@@ -114,23 +126,29 @@ export default function Register() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: formData.email,
-          emailOtp,
-          phoneOtp
+          emailOtp: code,
+          phoneOtp: code
         })
       });
 
-      const data = await response.json();
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (jsonErr) {
+        data = {};
+      }
+
       if (response.ok) {
         setMessage('Registration successful! Redirecting to login...');
         setTimeout(() => {
           navigate('/login', { state: { justRegistered: true } });
         }, 1500);
       } else {
-        setError(data.error || 'Verification failed. Please check the codes.');
+        setError(data.error || 'Verification failed. Please check the code.');
       }
     } catch (err) {
       console.error(err);
-      setError('Verification connection failed.');
+      setError('Verification connection failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -319,39 +337,28 @@ export default function Register() {
           ) : (
             <form onSubmit={handleVerifyOtp} style={styles.form}>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '0 0 1rem 0', textAlign: 'center' }}>
-                Enter the 6-digit codes sent to verify your identity.
+                Enter the 6-digit verification code sent to <strong>{formData.email}</strong>
               </p>
 
               <div className="input-group">
-                <label className="input-label">Email Verification Code</label>
+                <label className="input-label">6-Digit Verification Code</label>
                 <div style={styles.inputWithIcon}>
                   <KeyRound size={20} color="var(--text-muted)" style={styles.inputIcon} />
                   <input 
                     type="text" 
                     value={emailOtp}
-                    onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      setEmailOtp(val);
+                      setPhoneOtp(val);
+                    }}
                     className="input-field" 
-                    style={{paddingLeft: '2.5rem', width: '100%'}}
-                    placeholder="Enter 6-digit email OTP"
+                    style={{paddingLeft: '2.5rem', width: '100%', fontSize: '1.2rem', letterSpacing: '4px', textAlign: 'center'}}
+                    placeholder="123456"
                     pattern="[0-9]{6}"
+                    maxLength={6}
                     required
-                  />
-                </div>
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">SMS Gateway Simulation Code (printed on console)</label>
-                <div style={styles.inputWithIcon}>
-                  <KeyRound size={20} color="var(--text-muted)" style={styles.inputIcon} />
-                  <input 
-                    type="text" 
-                    value={phoneOtp}
-                    onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    className="input-field" 
-                    style={{paddingLeft: '2.5rem', width: '100%'}}
-                    placeholder="Enter 6-digit Simulation OTP"
-                    pattern="[0-9]{6}"
-                    required
+                    autoFocus
                   />
                 </div>
               </div>

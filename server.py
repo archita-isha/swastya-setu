@@ -232,10 +232,19 @@ def send_otp():
         }
     }
 
-    # Send SMS & WhatsApp (using API if configured, otherwise falls back to console simulation)
+    # Send SMS & WhatsApp in background thread so the HTTP response is fast and reliable
+    def _send_mobile_otp_async(target_phone, msg):
+        try:
+            agent.send_sms(target_phone, msg)
+        except Exception as err:
+            print(f"[API] Error in background SMS: {err}")
+        try:
+            agent.send_whatsapp(target_phone, msg)
+        except Exception as err:
+            print(f"[API] Error in background WhatsApp: {err}")
+
     sms_message = f"swasthya setu verification; {phone_otp} . Valid for 10 mins"
-    agent.send_sms(phone, sms_message)
-    agent.send_whatsapp(phone, sms_message)
+    threading.Thread(target=_send_mobile_otp_async, args=(phone, sms_message), daemon=True).start()
 
     # Send Email OTP using agent.send_email
     subject = "[Swastya Setu] Email Verification OTP"
@@ -245,7 +254,7 @@ Thank you for joining Swastya Setu!
 
 Your Email Verification Code is: {email_otp}
 
-This code is valid for 10 minutes. Please enter this code and the SMS code in the registration form to verify your account.
+This code is valid for 10 minutes. Please enter this code in the registration form to verify your account.
 
 Regards,
 Swastya Setu Team
@@ -253,9 +262,9 @@ Swastya Setu Team
     email_sent = agent.send_email(email, subject, body)
 
     if not email_sent:
-        return jsonify({"error": "Failed to send verification email. Please check your credentials."}), 500
+        return jsonify({"error": "Failed to send verification email. Please check your email address."}), 500
 
-    return jsonify({"message": "Verification codes sent successfully!"}), 200
+    return jsonify({"message": "Verification code sent to your email!"}), 200
 
 
 @app.route('/api/register/verify-otp', methods=['POST'])
@@ -265,8 +274,9 @@ def verify_otp():
     email_otp = data.get('emailOtp', '').strip()
     phone_otp = data.get('phoneOtp', '').strip()
 
-    if not email or not email_otp or not phone_otp:
-        return jsonify({"error": "Email and both OTP codes are required"}), 400
+    submitted_code = email_otp or phone_otp
+    if not email or not submitted_code:
+        return jsonify({"error": "Email and verification code are required"}), 400
 
     record = otp_store.get(email)
     if not record:
@@ -278,9 +288,17 @@ def verify_otp():
         otp_store.pop(email, None)
         return jsonify({"error": "OTP has expired. Please request a new one."}), 400
 
-    # Verify codes
-    if record["email_otp"] != email_otp or record["phone_otp"] != phone_otp:
-        return jsonify({"error": "Invalid verification codes. Please try again."}), 400
+    # Verify code: valid if matches email OTP, phone OTP, or either
+    valid = False
+    if email_otp and email_otp == record["email_otp"]:
+        valid = True
+    elif phone_otp and phone_otp == record["phone_otp"]:
+        valid = True
+    elif submitted_code in (record["email_otp"], record["phone_otp"]):
+        valid = True
+
+    if not valid:
+        return jsonify({"error": "Invalid verification code. Please check your email or phone and try again."}), 400
 
     # Save to auth_store (users.json)
     user_data = record["user_data"]

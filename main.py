@@ -104,7 +104,7 @@ def send_email(to_email, subject, body):
         msg["To"] = to_email
         msg["Reply-To"] = GMAIL  # ✅ ensures replies come back correctly
 
-        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
+        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=10)
         server.login(GMAIL, APP_PASSWORD)
         server.sendmail(GMAIL, to_email, msg.as_string())
         server.quit()
@@ -163,16 +163,25 @@ def send_sms(to_phone, message):
         if device_id:
             payload["deviceId"] = device_id
 
-        response = requests.post(url, json=payload, headers=headers)
+        response = requests.post(url, json=payload, headers=headers, timeout=6)
         if response.status_code in [200, 201]:
-            print(f"📱 [SMS GATEWAY] Message sent successfully to {cleaned_phone}")
+            try:
+                print(f"📱 [SMS GATEWAY] Message sent successfully to {cleaned_phone}")
+            except Exception:
+                print(f"[SMS GATEWAY] Message sent successfully to {cleaned_phone}")
             return True
         else:
-            print(f"❌ Failed to send SMS via Textbee: {response.status_code} - {response.text}")
+            try:
+                print(f"❌ Failed to send SMS via Textbee: {response.status_code} - {response.text}")
+            except Exception:
+                print(f"[SMS ERROR] Failed: {response.status_code}")
             return False
             
     except Exception as e:
-        print(f"❌ Error sending SMS via Textbee: {e}")
+        try:
+            print(f"❌ Error sending SMS via Textbee: {e}")
+        except Exception:
+            print(f"[SMS ERROR] {e}")
         return False
 
 
@@ -189,6 +198,26 @@ def send_whatsapp(to_phone, message):
     else:
         intl_phone = "+" + digits
 
+    # 0. Local Baileys WhatsApp Gateway (No templates needed, sends real WhatsApp)
+    gateway_url = os.environ.get("WHATSAPP_GATEWAY_URL", "http://localhost:3001/send-message").strip()
+    if gateway_url:
+        try:
+            res = requests.post(
+                gateway_url,
+                json={"number": intl_phone, "message": message},
+                timeout=4
+            )
+            if res.status_code == 200:
+                print(f"[WHATSAPP GATEWAY] Message sent successfully to {intl_phone}")
+                return True
+            elif res.status_code == 503:
+                err_info = res.json() if "application/json" in res.headers.get("content-type", "") else {}
+                hint = err_info.get("hint", "Open http://localhost:3001/qr to link WhatsApp")
+                print(f"[WHATSAPP GATEWAY] Not linked: {hint}")
+        except requests.exceptions.RequestException:
+            # Local gateway server not active or reachable, fall through to cloud providers
+            pass
+
     # 1. Twilio WhatsApp API
     twilio_sid = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
     twilio_auth = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
@@ -204,15 +233,27 @@ def send_whatsapp(to_phone, message):
         whatsapp_to = f"whatsapp:{intl_phone}"
         url = f"https://api.twilio.com/2010-04-01/Accounts/{twilio_sid}/Messages.json"
 
+        content_sid = os.environ.get("TWILIO_CONTENT_SID", "").strip()
+        if content_sid:
+            post_data = {
+                "From": twilio_from,
+                "To": whatsapp_to,
+                "ContentSid": content_sid,
+                "ContentVariables": json.dumps({"1": message})
+            }
+        else:
+            post_data = {
+                "From": twilio_from,
+                "To": whatsapp_to,
+                "Body": message
+            }
+
         try:
             res = requests.post(
                 url,
-                data={
-                    "From": twilio_from,
-                    "To": whatsapp_to,
-                    "Body": message
-                },
-                auth=(twilio_sid, twilio_auth)
+                data=post_data,
+                auth=(twilio_sid, twilio_auth),
+                timeout=6
             )
             if res.status_code in [200, 201]:
                 print(f"[WHATSAPP TWILIO] Message sent successfully to {whatsapp_to}")
@@ -242,7 +283,7 @@ def send_whatsapp(to_phone, message):
             "text": {"body": message}
         }
         try:
-            res = requests.post(url, json=payload, headers=headers)
+            res = requests.post(url, json=payload, headers=headers, timeout=6)
             if res.status_code in [200, 201]:
                 print(f"[WHATSAPP META] Message sent successfully to {recipient_digits}")
                 return True
@@ -269,7 +310,7 @@ def send_whatsapp(to_phone, message):
             "body": message
         }
         try:
-            res = requests.post(generic_url, json=payload, headers=headers)
+            res = requests.post(generic_url, json=payload, headers=headers, timeout=6)
             if res.status_code in [200, 201]:
                 print(f"[WHATSAPP GATEWAY] Message sent successfully to {intl_phone}")
                 return True
