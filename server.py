@@ -232,19 +232,8 @@ def send_otp():
         }
     }
 
-    # Send SMS & WhatsApp in background thread so the HTTP response is fast and reliable
-    def _send_mobile_otp_async(target_phone, msg):
-        try:
-            agent.send_sms(target_phone, msg)
-        except Exception as err:
-            print(f"[API] Error in background SMS: {err}")
-        try:
-            agent.send_whatsapp(target_phone, msg)
-        except Exception as err:
-            print(f"[API] Error in background WhatsApp: {err}")
-
-    sms_message = f"swasthya setu verification; {phone_otp} . Valid for 10 mins"
-    threading.Thread(target=_send_mobile_otp_async, args=(phone, sms_message), daemon=True).start()
+    # Log registration simulation (SMS quota is reserved strictly for real emergency blood alerts)
+    print(f"[REGISTRATION] Email OTP queued for {email}. Mobile SMS bypassed to preserve monthly SMS quota.")
 
     # Send Email OTP using agent.send_email
     subject = "[Swastya Setu] Email Verification OTP"
