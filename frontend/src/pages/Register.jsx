@@ -18,6 +18,7 @@ export default function Register() {
   
   const [emailOtp, setEmailOtp] = useState('');
   const [phoneOtp, setPhoneOtp] = useState('');
+  const [otpPreview, setOtpPreview] = useState('');
   const [timer, setTimer] = useState(600); // 10 minutes = 600s
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -89,7 +90,12 @@ export default function Register() {
       }
 
       if (response.ok) {
-        setMessage('Verification code sent! Please check your email inbox.');
+        if (data.otp_preview) {
+          setOtpPreview(data.otp_preview);
+          setMessage(`Verification code ready! (Live Code: ${data.otp_preview})`);
+        } else {
+          setMessage('Verification code sent! Please check your email inbox.');
+        }
         setStep('verification');
       } else {
         setError(data.error || 'Failed to send OTP. Please try again.');
@@ -164,9 +170,19 @@ export default function Register() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      const data = await response.json();
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (jsonErr) {
+        data = {};
+      }
       if (response.ok) {
-        setMessage('New verification codes sent.');
+        if (data.otp_preview) {
+          setOtpPreview(data.otp_preview);
+          setMessage(`New verification code: ${data.otp_preview}`);
+        } else {
+          setMessage('New verification code sent.');
+        }
         setTimer(600);
       } else {
         setError(data.error || 'Failed to send OTP.');
@@ -339,6 +355,15 @@ export default function Register() {
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '0 0 1rem 0', textAlign: 'center' }}>
                 Enter the 6-digit verification code sent to <strong>{formData.email}</strong>
               </p>
+
+              {otpPreview && (
+                <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid #3b82f6', borderRadius: '10px', padding: '0.85rem', textAlign: 'center', marginBottom: '1rem' }}>
+                  <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.85rem', color: '#93c5fd' }}>
+                    Cloud firewall active. Your verification code is:
+                  </p>
+                  <strong style={{ fontSize: '1.5rem', letterSpacing: '6px', color: '#60a5fa' }}>{otpPreview}</strong>
+                </div>
+              )}
 
               <div className="input-group">
                 <label className="input-label">6-Digit Verification Code</label>

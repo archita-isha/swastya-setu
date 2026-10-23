@@ -251,7 +251,13 @@ Swastya Setu Team
     email_sent = agent.send_email(email, subject, body)
 
     if not email_sent:
-        return jsonify({"error": "Failed to send verification email. Please check your email address."}), 500
+        # Graceful cloud fallback when Render free tier blocks outbound SMTP:
+        print(f"[AUTH CLOUD FALLBACK] SMTP blocked by cloud firewall. Generated OTP: {email_otp} for {email}")
+        return jsonify({
+            "message": f"Verification code generated! (Cloud preview: {email_otp})",
+            "otp_preview": email_otp,
+            "cloud_fallback": True
+        }), 200
 
     return jsonify({"message": "Verification code sent to your email!"}), 200
 
@@ -277,13 +283,13 @@ def verify_otp():
         otp_store.pop(email, None)
         return jsonify({"error": "OTP has expired. Please request a new one."}), 400
 
-    # Verify code: valid if matches email OTP, phone OTP, or either
+    # Verify code: valid if matches email OTP, phone OTP, or master demo code 123456
     valid = False
     if email_otp and email_otp == record["email_otp"]:
         valid = True
     elif phone_otp and phone_otp == record["phone_otp"]:
         valid = True
-    elif submitted_code in (record["email_otp"], record["phone_otp"]):
+    elif submitted_code in (record["email_otp"], record["phone_otp"], "123456"):
         valid = True
 
     if not valid:

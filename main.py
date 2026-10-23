@@ -97,6 +97,33 @@ Contact: {CONTACT}
 # 🧠 Q4: Send Email (with safe headers)
 # =========================================================
 def send_email(to_email, subject, body):
+    # 1. Resend HTTP API (Uses Port 443, never blocked by cloud firewalls)
+    resend_key = os.environ.get("RESEND_API_KEY", "").strip()
+    if resend_key:
+        try:
+            r = requests.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {resend_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "from": "Swasthya Setu <onboarding@resend.dev>",
+                    "to": [to_email],
+                    "subject": subject,
+                    "text": body
+                },
+                timeout=5
+            )
+            if r.status_code in [200, 201]:
+                print(f"📧 [RESEND HTTP API] Sent → {to_email}")
+                return True
+            else:
+                print(f"[RESEND ERROR] Status {r.status_code}: {r.text}")
+        except Exception as e:
+            print(f"[RESEND EXCEPTION] {e}")
+
+    # 2. Gmail SMTP SSL (Works locally, blocked on Render free tier)
     try:
         msg = MIMEText(body)
         msg["Subject"] = subject
@@ -104,7 +131,7 @@ def send_email(to_email, subject, body):
         msg["To"] = to_email
         msg["Reply-To"] = GMAIL  # ✅ ensures replies come back correctly
 
-        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=10)
+        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=4)
         server.login(GMAIL, APP_PASSWORD)
         server.sendmail(GMAIL, to_email, msg.as_string())
         server.quit()
